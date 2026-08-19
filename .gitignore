@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.local
+.env
+.env.*
+!.env.example
+server/data/
+*.db
+*.db-wal
+*.db-shm
+.DS_Store
+Thumbs.db

@@ -1,0 +1,6 @@
+@import 'tailwindcss';
+
+html {
+  /* iOS: prevent rubber-band overscroll revealing white behind the app */
+  background-color: #0f172a;
+}
