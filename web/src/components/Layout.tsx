@@ -6,7 +6,8 @@ const tabs = [
   { to: '/notlar', label: 'Notlar', icon: '📝' },
   { to: '/projeler', label: 'Projeler', icon: '🏗️' },
   { to: '/kayit', label: 'Kayıt', icon: '🧾' },
-  { to: '/depo', label: 'Depo', icon: '📁' },
+  { to: '/arsiv', label: 'Arşiv', icon: '📁' },
+  { to: '/chat', label: 'Chat', icon: '💬' },
 ];
 
 export default function Layout() {
@@ -36,7 +37,7 @@ export default function Layout() {
       </main>
 
       <nav className="fixed bottom-0 inset-x-0 bg-slate-800/95 backdrop-blur border-t border-slate-700 pb-[env(safe-area-inset-bottom)]">
-        <div className="grid grid-cols-5 max-w-2xl mx-auto">
+        <div className="grid grid-cols-6 max-w-2xl mx-auto">
           {tabs.map((t) => (
             <NavLink
               key={t.to}

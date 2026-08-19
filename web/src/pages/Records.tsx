@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
-import { apiGet, apiSend, type Proje } from '../lib/api';
+import { apiGet, apiSend, apiUpload, type Dosya, type Proje } from '../lib/api';
 import { formatDate, formatKurus, parseTlToKurus } from '../lib/format';
 
 // ---------- shared bits ----------
 
 const input =
   'bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-base outline-none focus:border-amber-400 min-w-0';
+const chip = (cls: string) => `text-[11px] px-2 py-0.5 rounded-full ${cls}`;
+const kurusToTl = (kurus: number | null) => (kurus == null ? '' : (kurus / 100).toString().replace('.', ','));
 
 function useProjeler() {
   const [projeler, setProjeler] = useState<Proje[]>([]);
@@ -38,23 +40,38 @@ function ProjeSelect({
   );
 }
 
-function AddBox({ label, open, setOpen, children }: { label: string; open: boolean; setOpen: (v: boolean) => void; children: ReactNode }) {
+function EditBtn({ onClick }: { onClick: () => void }) {
   return (
-    <>
-      <button
-        onClick={() => setOpen(!open)}
-        className="bg-slate-800 border border-dashed border-slate-600 rounded-xl py-2.5 text-sm text-slate-300 w-full"
-      >
-        {open ? 'Vazgeç' : label}
-      </button>
-      {open && <div className="bg-slate-800/50 rounded-xl p-3 mt-2">{children}</div>}
-    </>
+    <button onClick={onClick} className="text-slate-500 active:text-amber-400 px-1.5" aria-label="Düzenle">
+      ✏️
+    </button>
   );
 }
 
-const chip = (cls: string) => `text-[11px] px-2 py-0.5 rounded-full ${cls}`;
+/** Upload a file and return its row — used by çek (photo) and belge (document) forms. */
+async function uploadFile(file: File, kategori: string, projeId: number | null): Promise<Dosya> {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('kategori', kategori);
+  if (projeId) form.append('projeId', String(projeId));
+  return apiUpload<Dosya>('/api/dosyalar', form);
+}
 
-// ---------- Çekler ----------
+function FileRow({ dosyaId }: { dosyaId: number | null }) {
+  if (!dosyaId) return null;
+  return (
+    <a
+      href={`/api/dosyalar/${dosyaId}/download`}
+      target="_blank"
+      rel="noreferrer"
+      className="mt-1.5 inline-block text-xs text-sky-400"
+    >
+      📎 Ekli dosyayı aç
+    </a>
+  );
+}
+
+// ============================================================ Çekler
 
 type Cek = {
   id: number;
@@ -65,6 +82,7 @@ type Cek = {
   banka: string | null;
   cekNo: string | null;
   projeId: number | null;
+  dosyaId: number | null;
   durum: 'beklemede' | 'odendi' | 'karsiliksiz' | 'iptal';
 };
 
@@ -75,104 +93,161 @@ const CEK_DURUM: Record<Cek['durum'], [string, string]> = {
   iptal: ['İptal', 'bg-slate-500/15 text-slate-400'],
 };
 
+function CekForm({ initial, projeler, onDone }: { initial: Cek | null; projeler: Proje[]; onDone: () => void }) {
+  const [f, setF] = useState({
+    yon: initial?.yon ?? 'verilen',
+    karsiTaraf: initial?.karsiTaraf ?? '',
+    tutar: kurusToTl(initial?.tutarKurus ?? null),
+    vade: initial?.vadeTarihi ?? '',
+    banka: initial?.banka ?? '',
+    cekNo: initial?.cekNo ?? '',
+    projeId: initial?.projeId ? String(initial.projeId) : '',
+  });
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    const tutarKurus = parseTlToKurus(f.tutar);
+    if (!tutarKurus) return;
+    setBusy(true);
+    try {
+      const projeId = f.projeId ? Number(f.projeId) : null;
+      let dosyaId = initial?.dosyaId ?? null;
+      if (file) dosyaId = (await uploadFile(file, 'cek_goruntu', projeId)).id;
+      const body = {
+        yon: f.yon,
+        karsiTaraf: f.karsiTaraf.trim(),
+        tutarKurus,
+        vadeTarihi: f.vade,
+        banka: f.banka.trim() || null,
+        cekNo: f.cekNo.trim() || null,
+        projeId,
+        dosyaId,
+      };
+      await (initial ? apiSend('PUT', `/api/cekler/${initial.id}`, body) : apiSend('POST', '/api/cekler', body));
+      onDone();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-2">
+      <div className="flex gap-2">
+        {(
+          [
+            ['verilen', 'Verdiğimiz'],
+            ['alinan', 'Aldığımız'],
+          ] as const
+        ).map(([v, l]) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setF({ ...f, yon: v })}
+            className={`flex-1 text-xs py-2 rounded-lg border ${f.yon === v ? 'border-amber-400 text-amber-400' : 'border-slate-700 text-slate-400'}`}
+          >
+            {l}
+          </button>
+        ))}
+      </div>
+      <input className={input} placeholder="Karşı taraf *" value={f.karsiTaraf} onChange={(e) => setF({ ...f, karsiTaraf: e.target.value })} />
+      <div className="flex gap-2">
+        <input className={`${input} flex-1`} inputMode="decimal" placeholder="Tutar (TL) *" value={f.tutar} onChange={(e) => setF({ ...f, tutar: e.target.value })} />
+        <input type="date" className={`${input} flex-1`} value={f.vade} onChange={(e) => setF({ ...f, vade: e.target.value })} />
+      </div>
+      <div className="flex gap-2">
+        <input className={`${input} flex-1`} placeholder="Banka" value={f.banka} onChange={(e) => setF({ ...f, banka: e.target.value })} />
+        <input className={`${input} flex-1`} placeholder="Çek no" value={f.cekNo} onChange={(e) => setF({ ...f, cekNo: e.target.value })} />
+      </div>
+      <ProjeSelect value={f.projeId} onChange={(v) => setF({ ...f, projeId: v })} projeler={projeler} />
+      <label className="text-xs text-slate-400">
+        Çek fotoğrafı {initial?.dosyaId ? '(mevcut — seçersen değişir)' : '(isteğe bağlı)'}
+        <input type="file" accept="image/*" capture="environment" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="mt-1 block w-full text-sm file:bg-slate-700 file:border-0 file:rounded-lg file:px-3 file:py-1.5 file:text-slate-200 file:mr-3" />
+      </label>
+      <button disabled={busy || !f.karsiTaraf.trim() || !parseTlToKurus(f.tutar) || !f.vade} className="bg-amber-500 disabled:opacity-40 text-slate-900 font-semibold rounded-xl py-2.5 text-sm">
+        {busy ? 'Kaydediliyor…' : initial ? 'Güncelle' : 'Kaydet — vade uyarıları otomatik kurulur'}
+      </button>
+    </form>
+  );
+}
+
 function Cekler({ projeler }: { projeler: Proje[] }) {
   const [rows, setRows] = useState<Cek[]>([]);
-  const [open, setOpen] = useState(false);
-  const [f, setF] = useState({ yon: 'verilen', karsiTaraf: '', tutar: '', vade: '', banka: '', cekNo: '', projeId: '' });
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Cek | null>(null);
 
   const load = () => apiGet<Cek[]>('/api/cekler').then(setRows);
   useEffect(() => {
     load();
   }, []);
 
-  async function add(e: FormEvent) {
-    e.preventDefault();
-    const tutarKurus = parseTlToKurus(f.tutar);
-    if (!tutarKurus) return;
-    await apiSend('POST', '/api/cekler', {
-      yon: f.yon,
-      karsiTaraf: f.karsiTaraf.trim(),
-      tutarKurus,
-      vadeTarihi: f.vade,
-      banka: f.banka.trim() || null,
-      cekNo: f.cekNo.trim() || null,
-      projeId: f.projeId ? Number(f.projeId) : null,
-    });
-    setF({ yon: 'verilen', karsiTaraf: '', tutar: '', vade: '', banka: '', cekNo: '', projeId: '' });
-    setOpen(false);
-    await load();
-  }
-
   async function setDurum(c: Cek, durum: Cek['durum']) {
     await apiSend('PUT', `/api/cekler/${c.id}`, { durum });
     await load();
   }
 
+  const done = () => {
+    setAdding(false);
+    setEditing(null);
+    load();
+  };
+
   return (
     <div className="flex flex-col gap-3">
-      <AddBox label="＋ Yeni çek" open={open} setOpen={setOpen}>
-        <form onSubmit={add} className="flex flex-col gap-2">
-          <div className="flex gap-2">
-            {(
-              [
-                ['verilen', 'Verdiğimiz'],
-                ['alinan', 'Aldığımız'],
-              ] as const
-            ).map(([v, l]) => (
-              <button
-                key={v}
-                type="button"
-                onClick={() => setF({ ...f, yon: v })}
-                className={`flex-1 text-xs py-2 rounded-lg border ${f.yon === v ? 'border-amber-400 text-amber-400' : 'border-slate-700 text-slate-400'}`}
-              >
-                {l}
-              </button>
-            ))}
-          </div>
-          <input className={input} placeholder="Karşı taraf *" value={f.karsiTaraf} onChange={(e) => setF({ ...f, karsiTaraf: e.target.value })} />
-          <div className="flex gap-2">
-            <input className={`${input} flex-1`} inputMode="decimal" placeholder="Tutar (TL) *" value={f.tutar} onChange={(e) => setF({ ...f, tutar: e.target.value })} />
-            <input type="date" className={`${input} flex-1`} value={f.vade} onChange={(e) => setF({ ...f, vade: e.target.value })} />
-          </div>
-          <div className="flex gap-2">
-            <input className={`${input} flex-1`} placeholder="Banka" value={f.banka} onChange={(e) => setF({ ...f, banka: e.target.value })} />
-            <input className={`${input} flex-1`} placeholder="Çek no" value={f.cekNo} onChange={(e) => setF({ ...f, cekNo: e.target.value })} />
-          </div>
-          <ProjeSelect value={f.projeId} onChange={(v) => setF({ ...f, projeId: v })} projeler={projeler} />
-          <button disabled={!f.karsiTaraf.trim() || !parseTlToKurus(f.tutar) || !f.vade} className="bg-amber-500 disabled:opacity-40 text-slate-900 font-semibold rounded-xl py-2.5 text-sm">
-            Kaydet — vade uyarıları otomatik kurulur
-          </button>
-        </form>
-      </AddBox>
+      <button
+        onClick={() => {
+          setAdding(!adding);
+          setEditing(null);
+        }}
+        className="bg-slate-800 border border-dashed border-slate-600 rounded-xl py-2.5 text-sm text-slate-300"
+      >
+        {adding ? 'Vazgeç' : '＋ Yeni çek'}
+      </button>
+      {adding && (
+        <div className="bg-slate-800/50 rounded-xl p-3">
+          <CekForm initial={null} projeler={projeler} onDone={done} />
+        </div>
+      )}
 
       {rows.map((c) => {
         const [label, cls] = CEK_DURUM[c.durum];
         return (
           <div key={c.id} className="bg-slate-800 rounded-xl p-3">
-            <div className="flex items-center justify-between">
-              <span className="font-medium text-[15px]">
-                {c.yon === 'verilen' ? '↗' : '↙'} {c.karsiTaraf}
-              </span>
-              <span className={chip(cls)}>{label}</span>
-            </div>
-            <p className="text-lg font-semibold mt-1">{formatKurus(c.tutarKurus)}</p>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Vade: {formatDate(c.vadeTarihi)}
-              {c.banka && ` · ${c.banka}`}
-              {c.cekNo && ` · ${c.cekNo}`}
-            </p>
-            {c.durum === 'beklemede' && (
-              <div className="flex gap-2 mt-2">
-                <button onClick={() => setDurum(c, 'odendi')} className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600/80 text-white">
-                  ✓ Ödendi
-                </button>
-                <button onClick={() => setDurum(c, 'karsiliksiz')} className="text-xs px-3 py-1.5 rounded-lg bg-red-600/70 text-white">
-                  Karşılıksız
-                </button>
-                <button onClick={() => setDurum(c, 'iptal')} className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 text-slate-300">
-                  İptal
-                </button>
-              </div>
+            {editing?.id === c.id ? (
+              <CekForm initial={c} projeler={projeler} onDone={done} />
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-[15px]">
+                    {c.yon === 'verilen' ? '↗' : '↙'} {c.karsiTaraf}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className={chip(cls)}>{label}</span>
+                    <EditBtn onClick={() => setEditing(c)} />
+                  </span>
+                </div>
+                <p className="text-lg font-semibold mt-1">{formatKurus(c.tutarKurus)}</p>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Vade: {formatDate(c.vadeTarihi)}
+                  {c.banka && ` · ${c.banka}`}
+                  {c.cekNo && ` · ${c.cekNo}`}
+                </p>
+                <FileRow dosyaId={c.dosyaId} />
+                {c.durum === 'beklemede' && (
+                  <div className="flex gap-2 mt-2">
+                    <button onClick={() => setDurum(c, 'odendi')} className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600/80 text-white">
+                      ✓ Ödendi
+                    </button>
+                    <button onClick={() => setDurum(c, 'karsiliksiz')} className="text-xs px-3 py-1.5 rounded-lg bg-red-600/70 text-white">
+                      Karşılıksız
+                    </button>
+                    <button onClick={() => setDurum(c, 'iptal')} className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 text-slate-300">
+                      İptal
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         );
@@ -182,7 +257,7 @@ function Cekler({ projeler }: { projeler: Proje[] }) {
   );
 }
 
-// ---------- Hakedişler ----------
+// ============================================================ Hakedişler
 
 type Hakedis = {
   id: number;
@@ -195,91 +270,129 @@ type Hakedis = {
   odendiMi: number;
 };
 
+function HakedisForm({ initial, projeler, onDone }: { initial: Hakedis | null; projeler: Proje[]; onDone: () => void }) {
+  const [f, setF] = useState({
+    yon: initial?.yon ?? 'giden',
+    tutar: kurusToTl(initial?.tutarKurus ?? null),
+    vade: initial?.vadeTarihi ?? '',
+    aciklama: initial?.aciklama ?? '',
+    projeId: initial?.projeId ? String(initial.projeId) : '',
+  });
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    const tutarKurus = parseTlToKurus(f.tutar);
+    if (!tutarKurus || !f.projeId) return;
+    const body = {
+      projeId: Number(f.projeId),
+      yon: f.yon,
+      tutarKurus,
+      vadeTarihi: f.vade || null,
+      aciklama: f.aciklama.trim() || null,
+    };
+    await (initial ? apiSend('PUT', `/api/hakedisler/${initial.id}`, body) : apiSend('POST', '/api/hakedisler', body));
+    onDone();
+  }
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-2">
+      <div className="flex gap-2">
+        {(
+          [
+            ['giden', 'Ödeyeceğiz (taşerona)'],
+            ['gelen', 'Alacağız (mal sahibinden)'],
+          ] as const
+        ).map(([v, l]) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setF({ ...f, yon: v })}
+            className={`flex-1 text-xs py-2 rounded-lg border ${f.yon === v ? 'border-amber-400 text-amber-400' : 'border-slate-700 text-slate-400'}`}
+          >
+            {l}
+          </button>
+        ))}
+      </div>
+      <ProjeSelect value={f.projeId} onChange={(v) => setF({ ...f, projeId: v })} required projeler={projeler} />
+      <div className="flex gap-2">
+        <input className={`${input} flex-1`} inputMode="decimal" placeholder="Tutar (TL) *" value={f.tutar} onChange={(e) => setF({ ...f, tutar: e.target.value })} />
+        <input type="date" className={`${input} flex-1`} value={f.vade} onChange={(e) => setF({ ...f, vade: e.target.value })} />
+      </div>
+      <input className={input} placeholder="Açıklama (örn: kaba inşaat 2. hakediş)" value={f.aciklama} onChange={(e) => setF({ ...f, aciklama: e.target.value })} />
+      <button disabled={!parseTlToKurus(f.tutar) || !f.projeId} className="bg-amber-500 disabled:opacity-40 text-slate-900 font-semibold rounded-xl py-2.5 text-sm">
+        {initial ? 'Güncelle' : 'Kaydet'}
+      </button>
+    </form>
+  );
+}
+
 function Hakedisler({ projeler }: { projeler: Proje[] }) {
   const [rows, setRows] = useState<Hakedis[]>([]);
-  const [open, setOpen] = useState(false);
-  const [f, setF] = useState({ yon: 'giden', tutar: '', vade: '', aciklama: '', projeId: '' });
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Hakedis | null>(null);
 
   const load = () => apiGet<Hakedis[]>('/api/hakedisler').then(setRows);
   useEffect(() => {
     load();
   }, []);
 
-  async function add(e: FormEvent) {
-    e.preventDefault();
-    const tutarKurus = parseTlToKurus(f.tutar);
-    if (!tutarKurus || !f.projeId) return;
-    await apiSend('POST', '/api/hakedisler', {
-      projeId: Number(f.projeId),
-      yon: f.yon,
-      tutarKurus,
-      vadeTarihi: f.vade || null,
-      aciklama: f.aciklama.trim() || null,
-    });
-    setF({ yon: 'giden', tutar: '', vade: '', aciklama: '', projeId: '' });
-    setOpen(false);
-    await load();
-  }
+  const projeAd = (id: number) => projeler.find((p) => p.id === id)?.ad ?? `#${id}`;
+  const done = () => {
+    setAdding(false);
+    setEditing(null);
+    load();
+  };
 
   async function markPaid(h: Hakedis) {
     await apiSend('PUT', `/api/hakedisler/${h.id}`, { odendiMi: 1 });
     await load();
   }
 
-  const projeAd = (id: number) => projeler.find((p) => p.id === id)?.ad ?? `#${id}`;
-
   return (
     <div className="flex flex-col gap-3">
-      <AddBox label="＋ Yeni hakediş" open={open} setOpen={setOpen}>
-        <form onSubmit={add} className="flex flex-col gap-2">
-          <div className="flex gap-2">
-            {(
-              [
-                ['giden', 'Ödeyeceğiz (taşerona)'],
-                ['gelen', 'Alacağız (mal sahibinden)'],
-              ] as const
-            ).map(([v, l]) => (
-              <button
-                key={v}
-                type="button"
-                onClick={() => setF({ ...f, yon: v })}
-                className={`flex-1 text-xs py-2 rounded-lg border ${f.yon === v ? 'border-amber-400 text-amber-400' : 'border-slate-700 text-slate-400'}`}
-              >
-                {l}
-              </button>
-            ))}
-          </div>
-          <ProjeSelect value={f.projeId} onChange={(v) => setF({ ...f, projeId: v })} required projeler={projeler} />
-          <div className="flex gap-2">
-            <input className={`${input} flex-1`} inputMode="decimal" placeholder="Tutar (TL) *" value={f.tutar} onChange={(e) => setF({ ...f, tutar: e.target.value })} />
-            <input type="date" className={`${input} flex-1`} value={f.vade} onChange={(e) => setF({ ...f, vade: e.target.value })} />
-          </div>
-          <input className={input} placeholder="Açıklama (örn: kaba inşaat 2. hakediş)" value={f.aciklama} onChange={(e) => setF({ ...f, aciklama: e.target.value })} />
-          <button disabled={!parseTlToKurus(f.tutar) || !f.projeId} className="bg-amber-500 disabled:opacity-40 text-slate-900 font-semibold rounded-xl py-2.5 text-sm">
-            Kaydet
-          </button>
-        </form>
-      </AddBox>
+      <button
+        onClick={() => {
+          setAdding(!adding);
+          setEditing(null);
+        }}
+        className="bg-slate-800 border border-dashed border-slate-600 rounded-xl py-2.5 text-sm text-slate-300"
+      >
+        {adding ? 'Vazgeç' : '＋ Yeni hakediş'}
+      </button>
+      {adding && (
+        <div className="bg-slate-800/50 rounded-xl p-3">
+          <HakedisForm initial={null} projeler={projeler} onDone={done} />
+        </div>
+      )}
 
       {rows.map((h) => (
         <div key={h.id} className="bg-slate-800 rounded-xl p-3">
-          <div className="flex items-center justify-between">
-            <span className="text-[15px]">
-              {h.yon === 'giden' ? '↗ Ödeme' : '↙ Tahsilat'} · {projeAd(h.projeId)}
-            </span>
-            <span className={chip(h.odendiMi ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-400')}>
-              {h.odendiMi ? 'Ödendi' : 'Bekliyor'}
-            </span>
-          </div>
-          <p className="text-lg font-semibold mt-1">{formatKurus(h.tutarKurus)}</p>
-          <p className="text-xs text-slate-400 mt-0.5">
-            {h.aciklama}
-            {h.vadeTarihi && ` · vade ${formatDate(h.vadeTarihi)}`}
-          </p>
-          {!h.odendiMi && (
-            <button onClick={() => markPaid(h)} className="mt-2 text-xs px-3 py-1.5 rounded-lg bg-emerald-600/80 text-white">
-              ✓ Ödendi işaretle
-            </button>
+          {editing?.id === h.id ? (
+            <HakedisForm initial={h} projeler={projeler} onDone={done} />
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <span className="text-[15px]">
+                  {h.yon === 'giden' ? '↗ Ödeme' : '↙ Tahsilat'} · {projeAd(h.projeId)}
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className={chip(h.odendiMi ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-400')}>
+                    {h.odendiMi ? 'Ödendi' : 'Bekliyor'}
+                  </span>
+                  <EditBtn onClick={() => setEditing(h)} />
+                </span>
+              </div>
+              <p className="text-lg font-semibold mt-1">{formatKurus(h.tutarKurus)}</p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {h.aciklama}
+                {h.vadeTarihi && ` · vade ${formatDate(h.vadeTarihi)}`}
+              </p>
+              {!h.odendiMi && (
+                <button onClick={() => markPaid(h)} className="mt-2 text-xs px-3 py-1.5 rounded-lg bg-emerald-600/80 text-white">
+                  ✓ Ödendi işaretle
+                </button>
+              )}
+            </>
           )}
         </div>
       ))}
@@ -288,7 +401,7 @@ function Hakedisler({ projeler }: { projeler: Proje[] }) {
   );
 }
 
-// ---------- Belgeler ----------
+// ============================================================ Belgeler
 
 type Belge = {
   id: number;
@@ -296,6 +409,7 @@ type Belge = {
   tur: string;
   verilisTarihi: string | null;
   gecerlilikBitis: string | null;
+  dosyaId: number | null;
   aciklama: string | null;
 };
 
@@ -309,10 +423,80 @@ const BELGE_TURLER = [
   ['diger', 'Diğer'],
 ] as const;
 
+function BelgeForm({ initial, projeler, onDone }: { initial: Belge | null; projeler: Proje[]; onDone: () => void }) {
+  const [f, setF] = useState({
+    tur: initial?.tur ?? 'ruhsat',
+    projeId: initial?.projeId ? String(initial.projeId) : '',
+    verilis: initial?.verilisTarihi ?? '',
+    bitis: initial?.gecerlilikBitis ?? '',
+    aciklama: initial?.aciklama ?? '',
+  });
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!f.projeId) return;
+    setBusy(true);
+    try {
+      const projeId = Number(f.projeId);
+      let dosyaId = initial?.dosyaId ?? null;
+      if (file) {
+        // belge PDF/photo goes into the Arşiv with a matching category
+        const kategori = f.tur === 'ruhsat' ? 'ruhsat' : 'diger';
+        dosyaId = (await uploadFile(file, kategori, projeId)).id;
+      }
+      const body = {
+        projeId,
+        tur: f.tur,
+        verilisTarihi: f.verilis || null,
+        gecerlilikBitis: f.bitis || null,
+        aciklama: f.aciklama.trim() || null,
+        dosyaId,
+      };
+      await (initial ? apiSend('PUT', `/api/belgeler/${initial.id}`, body) : apiSend('POST', '/api/belgeler', body));
+      onDone();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-2">
+      <div className="flex gap-2">
+        <select className={`${input} flex-1`} value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>
+          {BELGE_TURLER.map(([v, l]) => (
+            <option key={v} value={v}>
+              {l}
+            </option>
+          ))}
+        </select>
+        <ProjeSelect value={f.projeId} onChange={(v) => setF({ ...f, projeId: v })} required projeler={projeler} />
+      </div>
+      <div className="flex gap-2 items-center">
+        <label className="text-xs text-slate-500 w-14">Veriliş</label>
+        <input type="date" className={`${input} flex-1`} value={f.verilis} onChange={(e) => setF({ ...f, verilis: e.target.value })} />
+      </div>
+      <div className="flex gap-2 items-center">
+        <label className="text-xs text-slate-500 w-14">Bitiş</label>
+        <input type="date" className={`${input} flex-1`} value={f.bitis} onChange={(e) => setF({ ...f, bitis: e.target.value })} />
+      </div>
+      <input className={input} placeholder="Açıklama" value={f.aciklama} onChange={(e) => setF({ ...f, aciklama: e.target.value })} />
+      <label className="text-xs text-slate-400">
+        Belge dosyası — PDF veya fotoğraf {initial?.dosyaId ? '(mevcut — seçersen değişir)' : '(isteğe bağlı)'}
+        <input type="file" accept="image/*,.pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="mt-1 block w-full text-sm file:bg-slate-700 file:border-0 file:rounded-lg file:px-3 file:py-1.5 file:text-slate-200 file:mr-3" />
+      </label>
+      <button disabled={busy || !f.projeId} className="bg-amber-500 disabled:opacity-40 text-slate-900 font-semibold rounded-xl py-2.5 text-sm">
+        {busy ? 'Kaydediliyor…' : initial ? 'Güncelle' : 'Kaydet — bitiş uyarıları otomatik kurulur'}
+      </button>
+    </form>
+  );
+}
+
 function Belgeler({ projeler }: { projeler: Proje[] }) {
   const [rows, setRows] = useState<Belge[]>([]);
-  const [open, setOpen] = useState(false);
-  const [f, setF] = useState({ tur: 'ruhsat', projeId: '', verilis: '', bitis: '', aciklama: '' });
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Belge | null>(null);
 
   const load = () => apiGet<Belge[]>('/api/belgeler').then(setRows);
   useEffect(() => {
@@ -321,6 +505,11 @@ function Belgeler({ projeler }: { projeler: Proje[] }) {
 
   const turLabel = (t: string) => BELGE_TURLER.find(([v]) => v === t)?.[1] ?? t;
   const projeAd = (id: number) => projeler.find((p) => p.id === id)?.ad ?? `#${id}`;
+  const done = () => {
+    setAdding(false);
+    setEditing(null);
+    load();
+  };
 
   function expiryTone(bitis: string | null): string {
     if (!bitis) return 'text-slate-400';
@@ -328,60 +517,43 @@ function Belgeler({ projeler }: { projeler: Proje[] }) {
     return days < 7 ? 'text-red-400' : days < 30 ? 'text-amber-400' : 'text-slate-400';
   }
 
-  async function add(e: FormEvent) {
-    e.preventDefault();
-    if (!f.projeId) return;
-    await apiSend('POST', '/api/belgeler', {
-      projeId: Number(f.projeId),
-      tur: f.tur,
-      verilisTarihi: f.verilis || null,
-      gecerlilikBitis: f.bitis || null,
-      aciklama: f.aciklama.trim() || null,
-    });
-    setF({ tur: 'ruhsat', projeId: '', verilis: '', bitis: '', aciklama: '' });
-    setOpen(false);
-    await load();
-  }
-
   return (
     <div className="flex flex-col gap-3">
-      <AddBox label="＋ Yeni belge" open={open} setOpen={setOpen}>
-        <form onSubmit={add} className="flex flex-col gap-2">
-          <div className="flex gap-2">
-            <select className={`${input} flex-1`} value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>
-              {BELGE_TURLER.map(([v, l]) => (
-                <option key={v} value={v}>
-                  {l}
-                </option>
-              ))}
-            </select>
-            <ProjeSelect value={f.projeId} onChange={(v) => setF({ ...f, projeId: v })} required projeler={projeler} />
-          </div>
-          <div className="flex gap-2 items-center">
-            <label className="text-xs text-slate-500 w-14">Veriliş</label>
-            <input type="date" className={`${input} flex-1`} value={f.verilis} onChange={(e) => setF({ ...f, verilis: e.target.value })} />
-          </div>
-          <div className="flex gap-2 items-center">
-            <label className="text-xs text-slate-500 w-14">Bitiş</label>
-            <input type="date" className={`${input} flex-1`} value={f.bitis} onChange={(e) => setF({ ...f, bitis: e.target.value })} />
-          </div>
-          <input className={input} placeholder="Açıklama" value={f.aciklama} onChange={(e) => setF({ ...f, aciklama: e.target.value })} />
-          <button disabled={!f.projeId} className="bg-amber-500 disabled:opacity-40 text-slate-900 font-semibold rounded-xl py-2.5 text-sm">
-            Kaydet — bitiş uyarıları otomatik kurulur
-          </button>
-        </form>
-      </AddBox>
+      <button
+        onClick={() => {
+          setAdding(!adding);
+          setEditing(null);
+        }}
+        className="bg-slate-800 border border-dashed border-slate-600 rounded-xl py-2.5 text-sm text-slate-300"
+      >
+        {adding ? 'Vazgeç' : '＋ Yeni belge'}
+      </button>
+      {adding && (
+        <div className="bg-slate-800/50 rounded-xl p-3">
+          <BelgeForm initial={null} projeler={projeler} onDone={done} />
+        </div>
+      )}
 
       {rows.map((b) => (
         <div key={b.id} className="bg-slate-800 rounded-xl p-3">
-          <div className="flex items-center justify-between">
-            <span className="font-medium text-[15px]">📄 {turLabel(b.tur)}</span>
-            <span className="text-xs text-slate-500">{projeAd(b.projeId)}</span>
-          </div>
-          {b.aciklama && <p className="text-xs text-slate-400 mt-1">{b.aciklama}</p>}
-          <p className={`text-xs mt-1 ${expiryTone(b.gecerlilikBitis)}`}>
-            {b.gecerlilikBitis ? `Geçerlilik: ${formatDate(b.gecerlilikBitis)}` : 'Süresiz'}
-          </p>
+          {editing?.id === b.id ? (
+            <BelgeForm initial={b} projeler={projeler} onDone={done} />
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <span className="font-medium text-[15px]">📄 {turLabel(b.tur)}</span>
+                <span className="flex items-center gap-1">
+                  <span className="text-xs text-slate-500">{projeAd(b.projeId)}</span>
+                  <EditBtn onClick={() => setEditing(b)} />
+                </span>
+              </div>
+              {b.aciklama && <p className="text-xs text-slate-400 mt-1">{b.aciklama}</p>}
+              <p className={`text-xs mt-1 ${expiryTone(b.gecerlilikBitis)}`}>
+                {b.gecerlilikBitis ? `Geçerlilik: ${formatDate(b.gecerlilikBitis)}` : 'Süresiz'}
+              </p>
+              <FileRow dosyaId={b.dosyaId} />
+            </>
+          )}
         </div>
       ))}
       {rows.length === 0 && <p className="text-center text-slate-500 text-sm py-6">Belge kaydı yok</p>}
@@ -389,7 +561,7 @@ function Belgeler({ projeler }: { projeler: Proje[] }) {
   );
 }
 
-// ---------- Malzemeler ----------
+// ============================================================ Malzemeler
 
 type Malzeme = {
   id: number;
@@ -398,14 +570,60 @@ type Malzeme = {
   tedarikci: string | null;
   miktar: number | null;
   birim: string | null;
+  siparisTarihi: string | null;
   teslimTarihi: string | null;
   teslimAlindiMi: number;
 };
 
+function MalzemeForm({ initial, projeler, onDone }: { initial: Malzeme | null; projeler: Proje[]; onDone: () => void }) {
+  const [f, setF] = useState({
+    ad: initial?.ad ?? '',
+    tedarikci: initial?.tedarikci ?? '',
+    miktar: initial?.miktar != null ? String(initial.miktar).replace('.', ',') : '',
+    birim: initial?.birim ?? '',
+    teslim: initial?.teslimTarihi ?? '',
+    projeId: initial?.projeId ? String(initial.projeId) : '',
+  });
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!f.ad.trim() || !f.projeId) return;
+    const body = {
+      projeId: Number(f.projeId),
+      ad: f.ad.trim(),
+      tedarikci: f.tedarikci.trim() || null,
+      miktar: f.miktar ? Number(f.miktar.replace(',', '.')) : null,
+      birim: f.birim.trim() || null,
+      teslimTarihi: f.teslim || null,
+    };
+    await (initial ? apiSend('PUT', `/api/malzemeler/${initial.id}`, body) : apiSend('POST', '/api/malzemeler', body));
+    onDone();
+  }
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-2">
+      <input className={input} placeholder="Malzeme *  (örn: C30 beton)" value={f.ad} onChange={(e) => setF({ ...f, ad: e.target.value })} />
+      <div className="flex gap-2">
+        <input className={`${input} flex-1`} inputMode="decimal" placeholder="Miktar" value={f.miktar} onChange={(e) => setF({ ...f, miktar: e.target.value })} />
+        <input className={`${input} w-24`} placeholder="Birim" value={f.birim} onChange={(e) => setF({ ...f, birim: e.target.value })} />
+      </div>
+      <input className={input} placeholder="Tedarikçi" value={f.tedarikci} onChange={(e) => setF({ ...f, tedarikci: e.target.value })} />
+      <div className="flex gap-2 items-center">
+        <label className="text-xs text-slate-500 w-14">Teslim</label>
+        <input type="date" className={`${input} flex-1`} value={f.teslim} onChange={(e) => setF({ ...f, teslim: e.target.value })} />
+      </div>
+      <ProjeSelect value={f.projeId} onChange={(v) => setF({ ...f, projeId: v })} required projeler={projeler} />
+      <button disabled={!f.ad.trim() || !f.projeId} className="bg-amber-500 disabled:opacity-40 text-slate-900 font-semibold rounded-xl py-2.5 text-sm">
+        {initial ? 'Güncelle' : 'Kaydet'}
+      </button>
+    </form>
+  );
+}
+
 function Malzemeler({ projeler }: { projeler: Proje[] }) {
   const [rows, setRows] = useState<Malzeme[]>([]);
-  const [open, setOpen] = useState(false);
-  const [f, setF] = useState({ ad: '', tedarikci: '', miktar: '', birim: '', teslim: '', projeId: '' });
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Malzeme | null>(null);
 
   const load = () => apiGet<Malzeme[]>('/api/malzemeler').then(setRows);
   useEffect(() => {
@@ -413,22 +631,11 @@ function Malzemeler({ projeler }: { projeler: Proje[] }) {
   }, []);
 
   const projeAd = (id: number) => projeler.find((p) => p.id === id)?.ad ?? `#${id}`;
-
-  async function add(e: FormEvent) {
-    e.preventDefault();
-    if (!f.ad.trim() || !f.projeId) return;
-    await apiSend('POST', '/api/malzemeler', {
-      projeId: Number(f.projeId),
-      ad: f.ad.trim(),
-      tedarikci: f.tedarikci.trim() || null,
-      miktar: f.miktar ? Number(f.miktar.replace(',', '.')) : null,
-      birim: f.birim.trim() || null,
-      teslimTarihi: f.teslim || null,
-    });
-    setF({ ad: '', tedarikci: '', miktar: '', birim: '', teslim: '', projeId: '' });
-    setOpen(false);
-    await load();
-  }
+  const done = () => {
+    setAdding(false);
+    setEditing(null);
+    load();
+  };
 
   async function received(m: Malzeme) {
     await apiSend('PUT', `/api/malzemeler/${m.id}`, { teslimAlindiMi: 1 });
@@ -437,43 +644,48 @@ function Malzemeler({ projeler }: { projeler: Proje[] }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <AddBox label="＋ Yeni sipariş" open={open} setOpen={setOpen}>
-        <form onSubmit={add} className="flex flex-col gap-2">
-          <input className={input} placeholder="Malzeme *  (örn: C30 beton)" value={f.ad} onChange={(e) => setF({ ...f, ad: e.target.value })} />
-          <div className="flex gap-2">
-            <input className={`${input} flex-1`} inputMode="decimal" placeholder="Miktar" value={f.miktar} onChange={(e) => setF({ ...f, miktar: e.target.value })} />
-            <input className={`${input} w-24`} placeholder="Birim" value={f.birim} onChange={(e) => setF({ ...f, birim: e.target.value })} />
-          </div>
-          <input className={input} placeholder="Tedarikçi" value={f.tedarikci} onChange={(e) => setF({ ...f, tedarikci: e.target.value })} />
-          <div className="flex gap-2 items-center">
-            <label className="text-xs text-slate-500 w-14">Teslim</label>
-            <input type="date" className={`${input} flex-1`} value={f.teslim} onChange={(e) => setF({ ...f, teslim: e.target.value })} />
-          </div>
-          <ProjeSelect value={f.projeId} onChange={(v) => setF({ ...f, projeId: v })} required projeler={projeler} />
-          <button disabled={!f.ad.trim() || !f.projeId} className="bg-amber-500 disabled:opacity-40 text-slate-900 font-semibold rounded-xl py-2.5 text-sm">
-            Kaydet
-          </button>
-        </form>
-      </AddBox>
+      <button
+        onClick={() => {
+          setAdding(!adding);
+          setEditing(null);
+        }}
+        className="bg-slate-800 border border-dashed border-slate-600 rounded-xl py-2.5 text-sm text-slate-300"
+      >
+        {adding ? 'Vazgeç' : '＋ Yeni sipariş'}
+      </button>
+      {adding && (
+        <div className="bg-slate-800/50 rounded-xl p-3">
+          <MalzemeForm initial={null} projeler={projeler} onDone={done} />
+        </div>
+      )}
 
       {rows.map((m) => (
         <div key={m.id} className="bg-slate-800 rounded-xl p-3">
-          <div className="flex items-center justify-between">
-            <span className="font-medium text-[15px]">🧱 {m.ad}</span>
-            <span className={chip(m.teslimAlindiMi ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-400')}>
-              {m.teslimAlindiMi ? 'Teslim alındı' : 'Bekleniyor'}
-            </span>
-          </div>
-          <p className="text-xs text-slate-400 mt-1">
-            {[m.miktar != null ? `${m.miktar} ${m.birim ?? ''}`.trim() : null, m.tedarikci, projeAd(m.projeId)]
-              .filter(Boolean)
-              .join(' · ')}
-            {m.teslimTarihi && ` · teslim ${formatDate(m.teslimTarihi)}`}
-          </p>
-          {!m.teslimAlindiMi && (
-            <button onClick={() => received(m)} className="mt-2 text-xs px-3 py-1.5 rounded-lg bg-emerald-600/80 text-white">
-              ✓ Teslim alındı
-            </button>
+          {editing?.id === m.id ? (
+            <MalzemeForm initial={m} projeler={projeler} onDone={done} />
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <span className="font-medium text-[15px]">🧱 {m.ad}</span>
+                <span className="flex items-center gap-1">
+                  <span className={chip(m.teslimAlindiMi ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-400')}>
+                    {m.teslimAlindiMi ? 'Teslim alındı' : 'Bekleniyor'}
+                  </span>
+                  <EditBtn onClick={() => setEditing(m)} />
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                {[m.miktar != null ? `${m.miktar} ${m.birim ?? ''}`.trim() : null, m.tedarikci, projeAd(m.projeId)]
+                  .filter(Boolean)
+                  .join(' · ')}
+                {m.teslimTarihi && ` · teslim ${formatDate(m.teslimTarihi)}`}
+              </p>
+              {!m.teslimAlindiMi && (
+                <button onClick={() => received(m)} className="mt-2 text-xs px-3 py-1.5 rounded-lg bg-emerald-600/80 text-white">
+                  ✓ Teslim alındı
+                </button>
+              )}
+            </>
           )}
         </div>
       ))}
@@ -482,7 +694,7 @@ function Malzemeler({ projeler }: { projeler: Proje[] }) {
   );
 }
 
-// ---------- Taşeronlar ----------
+// ============================================================ Taşeronlar
 
 type Taseron = {
   id: number;
@@ -493,10 +705,49 @@ type Taseron = {
   anlasilanTutarKurus: number | null;
 };
 
+function TaseronForm({ initial, projeler, onDone }: { initial: Taseron | null; projeler: Proje[]; onDone: () => void }) {
+  const [f, setF] = useState({
+    ad: initial?.ad ?? '',
+    isKolu: initial?.isKolu ?? '',
+    telefon: initial?.telefon ?? '',
+    tutar: kurusToTl(initial?.anlasilanTutarKurus ?? null),
+    projeId: initial?.projeId ? String(initial.projeId) : '',
+  });
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!f.ad.trim()) return;
+    const body = {
+      ad: f.ad.trim(),
+      isKolu: f.isKolu.trim() || null,
+      telefon: f.telefon.trim() || null,
+      anlasilanTutarKurus: f.tutar ? parseTlToKurus(f.tutar) : null,
+      projeId: f.projeId ? Number(f.projeId) : null,
+    };
+    await (initial ? apiSend('PUT', `/api/taseronlar/${initial.id}`, body) : apiSend('POST', '/api/taseronlar', body));
+    onDone();
+  }
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-2">
+      <input className={input} placeholder="Ad *" value={f.ad} onChange={(e) => setF({ ...f, ad: e.target.value })} />
+      <div className="flex gap-2">
+        <input className={`${input} flex-1`} placeholder="İş kolu (kalıp, demir…)" value={f.isKolu} onChange={(e) => setF({ ...f, isKolu: e.target.value })} />
+        <input className={`${input} flex-1`} inputMode="tel" placeholder="Telefon" value={f.telefon} onChange={(e) => setF({ ...f, telefon: e.target.value })} />
+      </div>
+      <input className={input} inputMode="decimal" placeholder="Anlaşılan tutar (TL)" value={f.tutar} onChange={(e) => setF({ ...f, tutar: e.target.value })} />
+      <ProjeSelect value={f.projeId} onChange={(v) => setF({ ...f, projeId: v })} projeler={projeler} />
+      <button disabled={!f.ad.trim()} className="bg-amber-500 disabled:opacity-40 text-slate-900 font-semibold rounded-xl py-2.5 text-sm">
+        {initial ? 'Güncelle' : 'Kaydet'}
+      </button>
+    </form>
+  );
+}
+
 function Taseronlar({ projeler }: { projeler: Proje[] }) {
   const [rows, setRows] = useState<Taseron[]>([]);
-  const [open, setOpen] = useState(false);
-  const [f, setF] = useState({ ad: '', isKolu: '', telefon: '', tutar: '', projeId: '' });
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Taseron | null>(null);
 
   const load = () => apiGet<Taseron[]>('/api/taseronlar').then(setRows);
   useEffect(() => {
@@ -504,60 +755,53 @@ function Taseronlar({ projeler }: { projeler: Proje[] }) {
   }, []);
 
   const projeAd = (id: number | null) => (id ? (projeler.find((p) => p.id === id)?.ad ?? '') : '');
-
-  async function add(e: FormEvent) {
-    e.preventDefault();
-    if (!f.ad.trim()) return;
-    await apiSend('POST', '/api/taseronlar', {
-      ad: f.ad.trim(),
-      isKolu: f.isKolu.trim() || null,
-      telefon: f.telefon.trim() || null,
-      anlasilanTutarKurus: f.tutar ? parseTlToKurus(f.tutar) : null,
-      projeId: f.projeId ? Number(f.projeId) : null,
-    });
-    setF({ ad: '', isKolu: '', telefon: '', tutar: '', projeId: '' });
-    setOpen(false);
-    await load();
-  }
+  const done = () => {
+    setAdding(false);
+    setEditing(null);
+    load();
+  };
 
   return (
     <div className="flex flex-col gap-3">
-      <AddBox label="＋ Yeni taşeron" open={open} setOpen={setOpen}>
-        <form onSubmit={add} className="flex flex-col gap-2">
-          <input className={input} placeholder="Ad *" value={f.ad} onChange={(e) => setF({ ...f, ad: e.target.value })} />
-          <div className="flex gap-2">
-            <input className={`${input} flex-1`} placeholder="İş kolu (kalıp, demir…)" value={f.isKolu} onChange={(e) => setF({ ...f, isKolu: e.target.value })} />
-            <input className={`${input} flex-1`} inputMode="tel" placeholder="Telefon" value={f.telefon} onChange={(e) => setF({ ...f, telefon: e.target.value })} />
-          </div>
-          <div className="flex gap-2">
-            <input className={`${input} flex-1`} inputMode="decimal" placeholder="Anlaşılan tutar (TL)" value={f.tutar} onChange={(e) => setF({ ...f, tutar: e.target.value })} />
-          </div>
-          <ProjeSelect value={f.projeId} onChange={(v) => setF({ ...f, projeId: v })} projeler={projeler} />
-          <button disabled={!f.ad.trim()} className="bg-amber-500 disabled:opacity-40 text-slate-900 font-semibold rounded-xl py-2.5 text-sm">
-            Kaydet
-          </button>
-        </form>
-      </AddBox>
+      <button
+        onClick={() => {
+          setAdding(!adding);
+          setEditing(null);
+        }}
+        className="bg-slate-800 border border-dashed border-slate-600 rounded-xl py-2.5 text-sm text-slate-300"
+      >
+        {adding ? 'Vazgeç' : '＋ Yeni taşeron'}
+      </button>
+      {adding && (
+        <div className="bg-slate-800/50 rounded-xl p-3">
+          <TaseronForm initial={null} projeler={projeler} onDone={done} />
+        </div>
+      )}
 
       {rows.map((t) => (
         <div key={t.id} className="bg-slate-800 rounded-xl p-3">
-          <div className="flex items-center justify-between">
-            <span className="font-medium text-[15px]">👷 {t.ad}</span>
-            {t.isKolu && <span className={chip('bg-sky-500/15 text-sky-400')}>{t.isKolu}</span>}
-          </div>
-          <p className="text-xs text-slate-400 mt-1">
-            {[
-              t.telefon,
-              t.anlasilanTutarKurus != null ? formatKurus(t.anlasilanTutarKurus) : null,
-              projeAd(t.projeId),
-            ]
-              .filter(Boolean)
-              .join(' · ')}
-          </p>
-          {t.telefon && (
-            <a href={`tel:${t.telefon.replace(/\s/g, '')}`} className="mt-2 inline-block text-xs px-3 py-1.5 rounded-lg bg-slate-700 text-slate-200">
-              📞 Ara
-            </a>
+          {editing?.id === t.id ? (
+            <TaseronForm initial={t} projeler={projeler} onDone={done} />
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <span className="font-medium text-[15px]">👷 {t.ad}</span>
+                <span className="flex items-center gap-1">
+                  {t.isKolu && <span className={chip('bg-sky-500/15 text-sky-400')}>{t.isKolu}</span>}
+                  <EditBtn onClick={() => setEditing(t)} />
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                {[t.telefon, t.anlasilanTutarKurus != null ? formatKurus(t.anlasilanTutarKurus) : null, projeAd(t.projeId)]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </p>
+              {t.telefon && (
+                <a href={`tel:${t.telefon.replace(/\s/g, '')}`} className="mt-2 inline-block text-xs px-3 py-1.5 rounded-lg bg-slate-700 text-slate-200">
+                  📞 Ara
+                </a>
+              )}
+            </>
           )}
         </div>
       ))}
@@ -566,7 +810,7 @@ function Taseronlar({ projeler }: { projeler: Proje[] }) {
   );
 }
 
-// ---------- page ----------
+// ============================================================ page
 
 const SECTIONS = [
   ['cekler', 'Çekler'],
