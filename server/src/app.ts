@@ -6,6 +6,11 @@ import { dosyalarRouter } from './routes/dosyalar.js';
 import { hatirlaticilarRouter } from './routes/hatirlaticilar.js';
 import { pushRouter } from './routes/push.js';
 import { digestRouter } from './routes/digest.js';
+import { ceklerRouter } from './routes/cekler.js';
+import { hakedislerRouter } from './routes/hakedisler.js';
+import { belgelerRouter } from './routes/belgeler.js';
+import { malzemelerRouter } from './routes/malzemeler.js';
+import { taseronlarRouter } from './routes/taseronlar.js';
 import { requireAuth } from './middleware/auth.js';
 
 export function createApp() {
@@ -32,6 +37,11 @@ export function createApp() {
   app.use('/api/hatirlaticilar', requireAuth, hatirlaticilarRouter);
   app.use('/api/push', requireAuth, pushRouter);
   app.use('/api/digest', requireAuth, digestRouter);
+  app.use('/api/cekler', requireAuth, ceklerRouter);
+  app.use('/api/hakedisler', requireAuth, hakedislerRouter);
+  app.use('/api/belgeler', requireAuth, belgelerRouter);
+  app.use('/api/malzemeler', requireAuth, malzemelerRouter);
+  app.use('/api/taseronlar', requireAuth, taseronlarRouter);
 
   // central error handler (multer size errors etc.)
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

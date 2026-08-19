@@ -5,6 +5,7 @@ import { db, schema } from '../db/index.js';
 import { sendPushToAll, type PushSender } from '../lib/push.js';
 import { nextOccurrence } from '../lib/recurrence.js';
 import { trtDateOf, utcAtTrtEndOfDay } from '../lib/time.js';
+import { materializeAll } from './materialize.js';
 
 export type WorkerDeps = { sendPush: PushSender };
 const realDeps: WorkerDeps = { sendPush: sendPushToAll };
@@ -141,6 +142,16 @@ export function startWorker() {
     }
   };
   setInterval(tick, 60_000);
+  // repair/backfill derived reminders at boot and every 6h (writes also do it inline)
+  const repair = () => {
+    try {
+      materializeAll(new Date());
+    } catch (err) {
+      console.error('materialize repair failed:', err);
+    }
+  };
+  repair();
+  setInterval(repair, 6 * 3600_000);
   void tick(); // run once at boot so a restart doesn't delay overdue sends
 }
 

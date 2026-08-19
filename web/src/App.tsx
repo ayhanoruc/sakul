@@ -7,6 +7,7 @@ import Notes from './pages/Notes';
 import Projects from './pages/Projects';
 import ProjectDetail from './pages/ProjectDetail';
 import Files from './pages/Files';
+import Records from './pages/Records';
 import { apiGet, type User } from './lib/api';
 
 function Guard({ children }: { children: React.ReactNode }) {
@@ -41,6 +42,7 @@ export default function App() {
           <Route path="/notlar" element={<Notes />} />
           <Route path="/projeler" element={<Projects />} />
           <Route path="/projeler/:id" element={<ProjectDetail />} />
+          <Route path="/kayit" element={<Records />} />
           <Route path="/depo" element={<Files />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
