@@ -1,42 +1,50 @@
 import { useEffect, useState } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import Layout from './components/Layout';
+import Login from './pages/Login';
+import Today from './pages/Today';
+import Notes from './pages/Notes';
+import Projects from './pages/Projects';
+import ProjectDetail from './pages/ProjectDetail';
+import Files from './pages/Files';
+import { apiGet, type User } from './lib/api';
 
-type Health = { status: string; version: string; time: string };
-
-export default function App() {
-  const [health, setHealth] = useState<Health | null>(null);
-  const [error, setError] = useState(false);
+function Guard({ children }: { children: React.ReactNode }) {
+  const [state, setState] = useState<'checking' | 'in' | 'out'>('checking');
 
   useEffect(() => {
-    fetch('/api/health')
-      .then((r) => r.json())
-      .then(setHealth)
-      .catch(() => setError(true));
+    apiGet<User>('/api/auth/me')
+      .then(() => setState('in'))
+      .catch(() => setState('out'));
   }, []);
 
+  if (state === 'checking') {
+    return <div className="min-h-dvh bg-slate-900 flex items-center justify-center text-slate-500">Şakül</div>;
+  }
+  if (state === 'out') return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
+export default function App() {
   return (
-    <div className="min-h-dvh bg-slate-900 text-slate-100 flex flex-col">
-      <header className="px-4 pt-[env(safe-area-inset-top)] bg-slate-800/60">
-        <div className="py-4 flex items-center gap-3">
-          <img src="/icons/icon-192.png" alt="" className="w-9 h-9 rounded-lg" />
-          <h1 className="text-xl font-semibold tracking-tight">Şakül</h1>
-        </div>
-      </header>
-
-      <main className="flex-1 flex flex-col items-center justify-center gap-4 p-6 text-center">
-        <p className="text-3xl">📐</p>
-        <p className="text-lg font-medium">Kurulum başarılı</p>
-        <p className="text-sm text-slate-400">
-          {error
-            ? 'API’ye ulaşılamıyor'
-            : health
-              ? `API çalışıyor · v${health.version}`
-              : 'API kontrol ediliyor…'}
-        </p>
-      </main>
-
-      <footer className="p-4 pb-[max(1rem,env(safe-area-inset-bottom))] text-center text-xs text-slate-500">
-        Aşama 0 — iskelet
-      </footer>
-    </div>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route
+          element={
+            <Guard>
+              <Layout />
+            </Guard>
+          }
+        >
+          <Route path="/" element={<Today />} />
+          <Route path="/notlar" element={<Notes />} />
+          <Route path="/projeler" element={<Projects />} />
+          <Route path="/projeler/:id" element={<ProjectDetail />} />
+          <Route path="/depo" element={<Files />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
