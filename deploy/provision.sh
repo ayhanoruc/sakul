@@ -15,7 +15,9 @@ touch "$APP_DIR/shared/.env"
 chown -R deploy:deploy "$APP_DIR"
 
 echo "== 2/6 bare git repo + post-receive hook =="
-if [ ! -d "$GIT_DIR" ]; then
+if [ ! -d "$GIT_DIR/objects" ]; then
+  mkdir -p "$GIT_DIR"
+  chown deploy:deploy "$GIT_DIR"
   sudo -u deploy git init --bare "$GIT_DIR"
 fi
 cat > "$GIT_DIR/hooks/post-receive" <<'HOOK'
@@ -29,8 +31,7 @@ git --work-tree="$APP" --git-dir="$GIT_DIR" checkout -f main
 
 echo "==> backend"
 cd "$APP/server"
-npm ci --omit=dev --no-audit --no-fund
-npm i -D typescript --no-audit --no-fund   # tsc needed for build only
+npm ci --no-audit --no-fund
 npx tsc
 ln -sfn /var/www/sakul/shared/.env "$APP/server/.env"
 
@@ -41,25 +42,19 @@ npm run build
 
 echo "==> restart"
 cd "$APP/server"
-pm2 restart sakul-api 2>/dev/null || pm2 start dist/index.js --name sakul-api --node-args="--env-file=.env"
+pm2 restart sakul-api --update-env 2>/dev/null || pm2 start dist/index.js --name sakul-api --node-args="--env-file=.env"
 pm2 save
 echo "==> deploy complete"
 HOOK
 chmod +x "$GIT_DIR/hooks/post-receive"
 chown -R deploy:deploy "$GIT_DIR"
 
-echo "== 3/6 nginx vhost =="
+echo "== 3/6 nginx vhost (HTTP only — certbot adds the 443 block + redirect) =="
 cat > /etc/nginx/sites-available/sakul <<NGINX
 server {
     listen 80;
     server_name $DOMAIN;
-    return 301 https://\$host\$request_uri;
-}
-server {
-    listen 443 ssl;
-    server_name $DOMAIN;
 
-    # certbot fills in ssl_certificate lines on first run
     root $APP_DIR/app/web/dist;
     index index.html;
 
@@ -88,11 +83,10 @@ server {
 NGINX
 ln -sfn /etc/nginx/sites-available/sakul /etc/nginx/sites-enabled/sakul
 nginx -t
+systemctl reload nginx
 
 echo "== 4/6 TLS certificate =="
-# HTTP vhost must be live for the ACME challenge
-systemctl reload nginx
-certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email || \
+certbot --nginx --redirect -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email || \
   echo "!! certbot failed — is the DuckDNS subdomain '$DOMAIN' pointing at this IP yet?"
 systemctl reload nginx
 
