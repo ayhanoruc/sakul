@@ -32,6 +32,14 @@ Yeni Kısayol → adını **Şakül Not** yap, sonra sırasıyla şu eylemleri e
 5. **Bildirim Göster** (Show Notification) — isteğe bağlı
    - "Not kaydedildi ✓"
 
-## Siri ile tam eller serbest
+## Tetikleyiciler
 
-Ayarlar → Siri → "Hey Siri"yi aç. Arabada: "Hey Siri, Şakül Not" → sinyal sesinden sonra konuş.
+**Ana Ekran ikonu (önerilen günlük yol):** Kısayollar uygulaması → kısayola uzun bas →
+**Ayrıntılar → Ana Ekrana Ekle**. Tek dokunuş → dikte başlar. Siri gerekmez.
+Aynı menüden Eylem Düğmesi (15 Pro+) ve Kilit Ekranı'na da eklenebilir.
+
+**Siri:** Ayarlar → Siri → "Hey Siri"yi Dinle açık ve **Siri dili Türkçe** olmalı.
+Tetik cümlesi = kısayolun adı. Siri "Şakül" kelimesini tanımıyorsa (uydurma kelimeleri
+yanlış duyar) kısayolu Siri'nin güvenilir duyduğu bir ada **yeniden adlandır** —
+örn. **"Şantiye Notu"** → "Hey Siri, Şantiye Notu". Ne duyduğunu test etmek için
+herhangi bir metin alanında mikrofonla aynı kelimeyi söyle.
