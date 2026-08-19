@@ -9,7 +9,7 @@ const SHORTCUT_LINKS: { name: string; desc: string; url: string; recipe: string 
   {
     name: 'Şakül Not',
     desc: 'Söyle → yazıya çevrilir → nota kaydedilir. "Hey Siri, Şakül Not"',
-    url: '',
+    url: 'https://www.icloud.com/shortcuts/d519f6b6d95e4c619a3f4a5727426c94',
     recipe: 'shortcuts/sakul-not.md',
   },
   {
