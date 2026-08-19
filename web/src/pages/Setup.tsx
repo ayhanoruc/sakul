@@ -15,7 +15,7 @@ const SHORTCUT_LINKS: { name: string; desc: string; url: string; recipe: string 
   {
     name: 'Şakül Hatırlat',
     desc: 'Söyle → tarih seç → hatırlatıcı kurulur',
-    url: '',
+    url: 'https://www.icloud.com/shortcuts/0286e33697114d0cb49992d080af53f7',
     recipe: 'shortcuts/sakul-hatirlat.md',
   },
   {
