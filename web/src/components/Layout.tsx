@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { apiSend } from '../lib/api';
 
 const tabs = [
@@ -26,9 +26,17 @@ export default function Layout() {
             <img src="/icons/icon-192.png" alt="" className="w-7 h-7 rounded-md" />
             <span className="text-lg font-semibold tracking-tight">Şakül</span>
           </div>
-          <button onClick={logout} className="text-xs text-slate-400 active:text-slate-200 px-2 py-1">
-            Çıkış
-          </button>
+          <div className="flex items-center gap-1">
+            <Link to="/ara" className="text-lg px-2 py-1" aria-label="Ara">
+              🔍
+            </Link>
+            <Link to="/kurulum" className="text-lg px-2 py-1" aria-label="Kurulum">
+              ⚙️
+            </Link>
+            <button onClick={logout} className="text-xs text-slate-400 active:text-slate-200 px-2 py-1">
+              Çıkış
+            </button>
+          </div>
         </div>
       </header>
 

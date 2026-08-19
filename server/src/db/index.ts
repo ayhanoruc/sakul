@@ -9,7 +9,7 @@ import { env, dbPath, uploadsDir } from '../lib/env.js';
 fs.mkdirSync(env.dataDir, { recursive: true });
 fs.mkdirSync(uploadsDir, { recursive: true });
 
-const sqlite = new Database(dbPath);
+export const sqlite = new Database(dbPath);
 sqlite.pragma('journal_mode = WAL');
 sqlite.pragma('foreign_keys = ON');
 sqlite.pragma('busy_timeout = 5000');

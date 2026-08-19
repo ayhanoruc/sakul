@@ -12,6 +12,9 @@ import { belgelerRouter } from './routes/belgeler.js';
 import { malzemelerRouter } from './routes/malzemeler.js';
 import { taseronlarRouter } from './routes/taseronlar.js';
 import { requireAuth } from './middleware/auth.js';
+import { requireAuthOrDeviceToken, type Scope } from './middleware/deviceToken.js';
+import { searchRouter } from './routes/search.js';
+import { deviceTokensRouter } from './routes/deviceTokens.js';
 
 export function createApp() {
   const app = express();
@@ -30,11 +33,17 @@ export function createApp() {
 
   app.use('/api/auth', authRouter);
 
+  // capture endpoints: session OR scoped device token (iOS Shortcuts), but ONLY for create
+  const captureAuth = (scope: Scope): express.RequestHandler => (req, res, next) => {
+    const mw = req.method === 'POST' && req.path === '/' ? requireAuthOrDeviceToken(scope) : requireAuth;
+    mw(req, res, next);
+  };
+
   // everything below requires a session
   app.use('/api/projeler', requireAuth, projelerRouter);
-  app.use('/api/notlar', requireAuth, notlarRouter);
+  app.use('/api/notlar', captureAuth('notes:write'), notlarRouter);
   app.use('/api/dosyalar', requireAuth, dosyalarRouter);
-  app.use('/api/hatirlaticilar', requireAuth, hatirlaticilarRouter);
+  app.use('/api/hatirlaticilar', captureAuth('reminders:write'), hatirlaticilarRouter);
   app.use('/api/push', requireAuth, pushRouter);
   app.use('/api/digest', requireAuth, digestRouter);
   app.use('/api/cekler', requireAuth, ceklerRouter);
@@ -42,6 +51,8 @@ export function createApp() {
   app.use('/api/belgeler', requireAuth, belgelerRouter);
   app.use('/api/malzemeler', requireAuth, malzemelerRouter);
   app.use('/api/taseronlar', requireAuth, taseronlarRouter);
+  app.use('/api/search', requireAuth, searchRouter);
+  app.use('/api/device-tokens', requireAuth, deviceTokensRouter);
 
   // central error handler (multer size errors etc.)
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

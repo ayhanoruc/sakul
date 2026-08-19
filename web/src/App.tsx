@@ -9,6 +9,8 @@ import ProjectDetail from './pages/ProjectDetail';
 import Files from './pages/Files';
 import Records from './pages/Records';
 import Chat from './pages/Chat';
+import Search from './pages/Search';
+import Setup from './pages/Setup';
 import { apiGet, type User } from './lib/api';
 
 function Guard({ children }: { children: React.ReactNode }) {
@@ -47,6 +49,8 @@ export default function App() {
           <Route path="/arsiv" element={<Files />} />
           <Route path="/depo" element={<Navigate to="/arsiv" replace />} />
           <Route path="/chat" element={<Chat />} />
+          <Route path="/ara" element={<Search />} />
+          <Route path="/kurulum" element={<Setup />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
