@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react';
 
-type Saglik = { durum: string; surum: string; zaman: string };
+type Health = { status: string; version: string; time: string };
 
 export default function App() {
-  const [saglik, setSaglik] = useState<Saglik | null>(null);
-  const [hata, setHata] = useState(false);
+  const [health, setHealth] = useState<Health | null>(null);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
-    fetch('/api/saglik')
+    fetch('/api/health')
       .then((r) => r.json())
-      .then(setSaglik)
-      .catch(() => setHata(true));
+      .then(setHealth)
+      .catch(() => setError(true));
   }, []);
 
   return (
@@ -26,10 +26,10 @@ export default function App() {
         <p className="text-3xl">📐</p>
         <p className="text-lg font-medium">Kurulum başarılı</p>
         <p className="text-sm text-slate-400">
-          {hata
+          {error
             ? 'API’ye ulaşılamıyor'
-            : saglik
-              ? `API çalışıyor · v${saglik.surum}`
+            : health
+              ? `API çalışıyor · v${health.version}`
               : 'API kontrol ediliyor…'}
         </p>
       </main>

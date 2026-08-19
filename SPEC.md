@@ -38,7 +38,7 @@ sync, native app, App Store anything.
 | Quick actions / "widgets" | iOS **Shortcuts** (Home Screen icons, Siri, Action Button) — not WidgetKit, which is impossible for web |
 | Self-hosted | Existing Hetzner CX23 (2 vCPU / 4 GB / 40 GB, Nuremberg) already running yildiz360 |
 | Users are in Turkey, server in Germany | **All timestamps stored UTC**, rendered `Europe/Istanbul` (UTC+3, no DST). Digest fires 07:00 TRT = 04:00 UTC |
-| Owner reads the code | Domain vocabulary in Turkish (**ASCII-only**: `taseronlar` not `taşeronlar`), structural code in English |
+| Owner reads the code | **Naming rule:** Turkish ONLY for business-domain terms with no clean English equivalent (`hakedisler`, `taseronlar`, `cekler`, `belgeler`, `notlar`, `projeler`, `hatirlaticilar`, `vade_tarihi`, `tutar_kurus`...), always ASCII-only. EVERYTHING structural is English: endpoints like `/api/health`, `/api/auth/login`, `/api/search`; fields like `status`, `version`, `id`, `created_at`; all variables, functions, types. UI copy (user-facing strings) is Turkish. |
 
 ---
 
@@ -75,7 +75,7 @@ Enums are TEXT + CHECK constraints.
               │                                │
         (untouched)         ┌─────────────────┼──────────────────┐
                             │                 │                  │
-                       /  → web/dist    /api/* → :3002     /api/dosyalar/:id/indir
+                       /  → web/dist    /api/* → :3002     /api/dosyalar/:id/download
                        static, nginx    sakul-api (PM2)    files via Express (auth),
                                             │              NOT nginx-public
                                    ┌────────┴────────┐
@@ -132,14 +132,14 @@ attach later; forcing a project at creation time kills adoption.
 
 ### Core
 
-**`kullanicilar`** — one row for now
-- `kullanici_adi` TEXT UNIQUE, `parola_hash` TEXT (bcrypt), `ad` TEXT
+**`users`** — one row for now
+- `username` TEXT UNIQUE, `password_hash` TEXT (bcrypt), `display_name` TEXT
 
-**`oturumlar`** — hand-rolled sessions (no express-session dependency)
-- `token_hash` TEXT UNIQUE (sha256 of the cookie value), `kullanici_id` FK, `expires_at`
+**`sessions`** — hand-rolled sessions (no express-session dependency)
+- `token_hash` TEXT UNIQUE (sha256 of the cookie value), `user_id` FK, `expires_at`
 
-**`cihaz_anahtarlari`** — long-lived device tokens for iOS Shortcuts
-- `token_hash` TEXT UNIQUE, `ad` TEXT ("Abi iPhone"), `scopes` TEXT (v1: `not_yaz,hatirlatici_yaz`),
+**`device_tokens`** — long-lived device tokens for iOS Shortcuts
+- `token_hash` TEXT UNIQUE, `name` TEXT ("Abi iPhone"), `scopes` TEXT (v1: `notes:write,reminders:write`),
   `last_used_at`, `revoked_at` — lost phone = revoke one row
 
 **`projeler`**
@@ -188,15 +188,15 @@ attach later; forcing a project at creation time kills adoption.
 - `durum` CHECK(`bekliyor|gonderildi|tamamlandi|iptal`)
 - UNIQUE(`kaynak_tablo`,`kaynak_id`,`hatirlatma_zamani`) — makes materialization idempotent
 
-**`push_abonelikleri`** — one row per installed iPhone
-- `endpoint` TEXT UNIQUE, `p256dh`, `auth`, `kullanici_id` FK, `last_seen_at`
+**`push_subscriptions`** — one row per installed iPhone
+- `endpoint` TEXT UNIQUE, `p256dh`, `auth`, `user_id` FK, `last_seen_at`
 
-**`hatirlatici_gonderimler`** — audit: what was sent, when, did it land
-- `hatirlatici_id` FK, `gonderim_zamani`, `kanal` CHECK(`push|telegram`), `basarili` INT, `hata` TEXT NULL
+**`reminder_deliveries`** — audit: what was sent, when, did it land
+- `hatirlatici_id` FK, `sent_at`, `channel` CHECK(`push|telegram`), `success` INT, `error` TEXT NULL
 
 ### Search
 
-**`arama_fts`** — FTS5 virtual table, `tokenize='trigram'`, contentless-delete mode, indexing:
+**`search_fts`** — FTS5 virtual table, `tokenize='trigram'`, contentless-delete mode, indexing:
 `notlar.icerik`, `dosyalar.orijinal_ad + aciklama + etiketler`, `projeler.ad`, kept in sync by
 AFTER INSERT/UPDATE/DELETE triggers. One ranked query surface: notes, files, projects.
 
@@ -270,20 +270,20 @@ shortcut structure does (re-tap the link).
 
 | Area | Endpoints |
 |---|---|
-| Auth | `POST /auth/giris`, `POST /auth/cikis`, `GET /auth/ben` |
-| Device tokens | `GET/POST /cihaz-anahtarlari`, `POST /cihaz-anahtarlari/:id/iptal` |
+| Auth | `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` |
+| Device tokens | `GET/POST /device-tokens`, `POST /device-tokens/:id/revoke` |
 | Projects | `GET/POST /projeler`, `GET/PUT/DELETE /projeler/:id` |
 | Notes | `GET/POST /notlar`, `PUT/DELETE /notlar/:id` (POST accepts device token) |
-| Files | `POST /dosyalar` (multipart), `GET /dosyalar` (filters: proje, kategori, q), `PUT /dosyalar/:id` (metadata), `GET /dosyalar/:id/indir` (streams, auth-gated), `DELETE` |
-| Reminders | `GET/POST /hatirlaticilar`, `PUT /hatirlaticilar/:id`, `POST /:id/tamamla`, `POST /:id/ertele`, `DELETE` (POST accepts device token) |
+| Files | `POST /dosyalar` (multipart), `GET /dosyalar` (filters: proje, kategori, q), `PUT /dosyalar/:id` (metadata), `GET /dosyalar/:id/download` (streams, auth-gated), `DELETE` |
+| Reminders | `GET/POST /hatirlaticilar`, `PUT /hatirlaticilar/:id`, `POST /:id/complete`, `POST /:id/snooze`, `DELETE` (POST accepts device token) |
 | Çeks | `GET/POST /cekler`, `PUT /cekler/:id` (incl. durum transitions) |
 | Hakediş | `GET/POST /hakedisler`, `PUT /hakedisler/:id` |
 | Documents | `GET/POST /belgeler`, `PUT /belgeler/:id` |
 | Materials | `GET/POST /malzemeler`, `PUT /malzemeler/:id` |
 | Taşerons | `GET/POST /taseronlar`, `PUT /taseronlar/:id` |
-| Search | `GET /arama?q=` (min 3 chars, ranked, cross-entity) |
-| Push | `POST /push/abone`, `DELETE /push/abone`, `GET /push/vapid-anahtari` |
-| Digest | `GET /ozet/bugun` (the data behind the 07:00 push + "Bugün" screen) |
+| Search | `GET /search?q=` (min 3 chars, ranked, cross-entity) |
+| Push | `POST /push/subscribe`, `DELETE /push/subscribe`, `GET /push/vapid-key` |
+| Digest | `GET /digest/today` (the data behind the 07:00 push + "Bugün" screen) |
 
 Validation with `zod` on every write. Device tokens are scope-limited (v1: create notes +
 reminders only — a stolen token can't read the knowledge base).
@@ -322,9 +322,9 @@ add, file upload + list. **Exit criterion:** abi writes a note and uploads a con
 phone.
 
 ### Stage 2 — Reminders + push (the riskiest tech, so it comes early)
-`push_abonelikleri`, VAPID keys, permission flow in the PWA, SW push handler. `hatirlaticilar`
+`push_subscriptions`, VAPID keys, permission flow in the PWA, SW push handler. `hatirlaticilar`
 CRUD for `sabit|tekrarli|kosullu`, the 60s tick, complete/snooze, 07:00 TRT digest,
-`hatirlatici_gonderimler` audit. **Exit criterion:** a reminder created on the phone arrives as
+`reminder_deliveries` audit. **Exit criterion:** a reminder created on the phone arrives as
 a push notification at the right Istanbul time; the morning digest lands at 07:00.
 
 ### Stage 3 — Money & documents
@@ -334,7 +334,7 @@ T-3/T-0, malzeme T-0). Çek list ordered by vade with durum chips. **Exit criter
 entered with a vade next week generates its warning pushes with zero manual reminder setup.
 
 ### Stage 4 — Search + kurulum + Shortcuts
-FTS5 trigram index + triggers + `/arama` + search UI. `cihaz_anahtarlari` + management UI.
+FTS5 trigram index + triggers + `/search` + search UI. `device_tokens` + management UI.
 `/kurulum` onboarding page (install steps, token display, iCloud shortcut links). Author the 3
 shortcuts on-phone from `shortcuts/` recipes; **field-test Turkish dictation with şantiye
 vocabulary on abi's actual iPhone.** **Exit criterion:** "Hey Siri, Şakül not" → dictated
@@ -343,7 +343,7 @@ Turkish sentence → appears in the app; searching `beton` finds it.
 ### Stage 5 — Hardening
 Offline note outbox (IndexedDB + Background Sync fallback queue), Telegram bot as optional
 second channel (same sender loop), Hetzner Backups enabled, uptime/error visibility (PM2 logs +
-a `/api/saglik` deep-health endpoint), restore-from-backup drill documented in DEPLOYMENT.md.
+a `/api/health` deep-health endpoint), restore-from-backup drill documented in DEPLOYMENT.md.
 
 ### Stage 6 — Intelligence (explicitly future; nothing in v1 blocks it)
 - AI chat over the knowledge base (`claude-opus-5`): answers from notes/files/records with citations

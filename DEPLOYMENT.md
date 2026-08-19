@@ -40,7 +40,7 @@ and restarts `sakul-api` under PM2.
 ```bash
 ssh deploy@<server-ip> "pm2 logs sakul-api --lines 50"   # logs (PM2 is per-user: use deploy, not root)
 ssh deploy@<server-ip> "pm2 restart sakul-api"
-curl -s https://sakulproject.duckdns.org/api/saglik              # health
+curl -s https://sakulproject.duckdns.org/api/health              # health
 ```
 
 ## Restore drill (documented before it's needed)
