@@ -15,16 +15,21 @@ Yeni Kısayol → adını **Şakül Not** yap, sonra sırasıyla şu eylemleri e
    - Dil: **Türkçe**
    - Dinlemeyi durdur: **Duraklamada** (Kısa cümleler için ideal; uzun notlar için "Dokunduğumda" seç)
 
-3. **URL İçeriğini Al** (Get Contents of URL)
-   - URL: `https://sakulproject.duckdns.org/api/notlar`
+3. **URL** (URL)
+   - `https://sakulproject.duckdns.org/api/notlar`
+   > Bu ayrı adım şart: "URL İçeriğini Al" bir önceki eylemin çıktısını otomatik girdi alır.
+   > URL adımı olmadan diktelenen metni URL sanır. Araya URL koyunca doğru bağlanır.
+
+4. **URL İçeriğini Al** (Get Contents of URL)
+   - Girdi: otomatik olarak üstteki **URL** olur ✓ (Diktelenen Metin görünüyorsa: mavi değişkene dokun → Temizle)
    - Yöntem: **POST**
    - Başlıklar (Headers):
      - `Authorization` : `Bearer ` + `Anahtar` değişkeni  ("Bearer" + boşluk + değişken)
    - İstek Gövdesi: **JSON**
-     - `icerik` (Metin) : **Diktelenen Metin** değişkeni
+     - `icerik` (Metin) : değer alanına dokun → **Değişken Seç** → **Diktelenen Metin**
      - `kaynak` (Metin) : `shortcut`
 
-4. **Bildirim Göster** (Show Notification) — isteğe bağlı
+5. **Bildirim Göster** (Show Notification) — isteğe bağlı
    - "Not kaydedildi ✓"
 
 ## Siri ile tam eller serbest

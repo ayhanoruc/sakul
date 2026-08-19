@@ -19,13 +19,17 @@ Yeni Kısayol → adı **Şakül Hatırlat**:
    - Biçim: **Özel** → `yyyy-MM-dd'T'HH:mm:ssZZZZZ`
    (ISO 8601 üretir; API bunu bekler)
 
-5. **URL İçeriğini Al** (Get Contents of URL)
-   - URL: `https://sakulproject.duckdns.org/api/hatirlaticilar`
+5. **URL** (URL)
+   - `https://sakulproject.duckdns.org/api/hatirlaticilar`
+   > Ayrı URL adımı şart — "URL İçeriğini Al" önceki eylemin çıktısını otomatik girdi alır.
+
+6. **URL İçeriğini Al** (Get Contents of URL)
+   - Girdi: otomatik olarak üstteki **URL** olur ✓
    - Yöntem: **POST**
    - Başlıklar: `Authorization` : `Bearer ` + `Anahtar`
    - İstek Gövdesi: **JSON**
      - `tur` (Metin) : `sabit`
-     - `baslik` (Metin) : **Diktelenen Metin**
-     - `hatirlatmaZamani` (Metin) : **Biçimlendirilmiş Tarih**
+     - `baslik` (Metin) : değer alanına dokun → **Değişken Seç** → **Diktelenen Metin**
+     - `hatirlatmaZamani` (Metin) : **Değişken Seç** → **Biçimlendirilmiş Tarih**
 
-6. **Bildirim Göster** — "Hatırlatıcı kuruldu ⏰" (isteğe bağlı)
+7. **Bildirim Göster** — "Hatırlatıcı kuruldu ⏰" (isteğe bağlı)
