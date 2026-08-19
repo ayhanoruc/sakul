@@ -225,3 +225,9 @@ export const reminderDeliveries = sqliteTable('reminder_deliveries', {
   success: integer('success').notNull(),
   error: text('error'),
 });
+
+/** Tiny KV store for worker state (e.g. last digest date). */
+export const appState = sqliteTable('app_state', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+});

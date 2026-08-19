@@ -3,6 +3,9 @@ import { authRouter } from './routes/auth.js';
 import { projelerRouter } from './routes/projeler.js';
 import { notlarRouter } from './routes/notlar.js';
 import { dosyalarRouter } from './routes/dosyalar.js';
+import { hatirlaticilarRouter } from './routes/hatirlaticilar.js';
+import { pushRouter } from './routes/push.js';
+import { digestRouter } from './routes/digest.js';
 import { requireAuth } from './middleware/auth.js';
 
 export function createApp() {
@@ -26,6 +29,9 @@ export function createApp() {
   app.use('/api/projeler', requireAuth, projelerRouter);
   app.use('/api/notlar', requireAuth, notlarRouter);
   app.use('/api/dosyalar', requireAuth, dosyalarRouter);
+  app.use('/api/hatirlaticilar', requireAuth, hatirlaticilarRouter);
+  app.use('/api/push', requireAuth, pushRouter);
+  app.use('/api/digest', requireAuth, digestRouter);
 
   // central error handler (multer size errors etc.)
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
