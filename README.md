@@ -1,1 +1,2 @@
 # sakul
+Şakül, bir ipin ucuna asılan ağır bir metal veya taştan oluşan, yerçekimi yardımıyla dikey bir doğru (diklik) elde etmeyi sağlayan basit ve hassas bir ölçü aletidir. Genellikle inşaat, marangozluk ve duvarcılıkta yüzeylerin düz ve dik olup olmadığını kontrol etmek için kullanılır.
